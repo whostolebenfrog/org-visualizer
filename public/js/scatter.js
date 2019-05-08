@@ -13,11 +13,11 @@ function scatter(dataUrl, pWidth, pHeight) {
         domainheight = height - margin.top - margin.bottom;
 
     const x = d3.scaleLinear()
-        .domain(padExtent([0, 42]))
+        .domain(padExtent([0, 60]))
         .range(padExtent([0, domainwidth]));
     const y = d3.scaleLinear()
-        .domain(padExtent([0, 10]))
-        .range(padExtent([domainheight, 0]));
+        .domain(padExtent([0, 50]))
+        .range(padExtent([0, domainheight]));
 
     const g = svg.append("g")
         .attr("transform", "translate(" + margin.top + "," + margin.top + ")");
@@ -66,12 +66,12 @@ function scatter(dataUrl, pWidth, pHeight) {
         console.log("What is y.range? " + y.range());
         g.append("g")
             .attr("class", "x axis")
-           // .attr("transform", "translate(0," + y.range()[0] / 2 + ")")
+            // .attr("transform", "translate(0," + y.range()[0] / 2 + ")")
             .call(d3.axisBottom(x).ticks(15));
 
         g.append("g")
             .attr("class", "y axis")
-           // .attr("transform", "translate(" + x.range()[1] / 2 + ", 0)")
+            // .attr("transform", "translate(" + x.range()[1] / 2 + ", 0)")
             .call(d3.axisLeft(y).ticks(35));
     });
 
