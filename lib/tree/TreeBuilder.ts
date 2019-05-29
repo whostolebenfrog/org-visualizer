@@ -26,7 +26,7 @@ import {
  */
 export interface ReportBuilder<ROOT> {
 
-    toSunburstTree(array: ROOT[]): Promise<SunburstTree>;
+    toSunburstTree(array: ROOT[] | AsyncIterable<ROOT>): Promise<SunburstTree>;
 }
 
 export type Renderer<T> = (t: T) => SunburstLeaf;
@@ -147,7 +147,7 @@ class DefaultTreeBuilder<ROOT, T> implements TreeBuilder<ROOT, T> {
             toSunburstTree: async elts => {
                 return {
                     name: this.rootName,
-                    children: await layer<ROOT, T>(elts, elts, this.steps, renderer),
+                    children: await layer<ROOT, T>(elts, this.steps, renderer),
                 };
             },
         };
@@ -164,12 +164,16 @@ export function treeBuilder<ROOT, T = ROOT>(rootName: string): TreeBuilder<ROOT,
 
 }
 
-async function layer<ROOT, T>(originalData: ROOT[],
-                              currentLayerData: any[],
-                              steps: Step[],
-                              renderer: Renderer<T>): Promise<Array<SunburstTree | SunburstLeaf>> {
+async function layer<ROOT, T>(
+    currentLayerData: AsyncIterable<any> | [],
+    steps: Step[],
+    renderer: Renderer<T>): Promise<Array<SunburstTree | SunburstLeaf>> {
     if (steps.length === 0) {
-        return currentLayerData.map(renderer);
+        const leaves: SunburstLeaf[] = [];
+        for await (const l of currentLayerData) {
+            leaves.push(renderer(l));
+        }
+        return leaves;
     }
     const step = steps[0];
     switch (step.kind) {
@@ -177,40 +181,43 @@ async function layer<ROOT, T>(originalData: ROOT[],
         case "group" :
             let groups;
             if (step.kind === "customGroup") {
-                groups = (step as CustomGroupStep<any, any>).to(currentLayerData);
+                throw new Error("Cannot handle custom group async");
+                //groups = (step as CustomGroupStep<any, any>).to(currentLayerData);
             } else {
-                const evaluations: Array<{e: any, result: string}> = await Promise.all(
-                    currentLayerData.map(e => {
-                        return  Promise.resolve((step as GroupStep<any>).by(e)).then(result => ({e, result}));
-                    }),
-                );
+                const evaluations: Array<{ e: any, result: string }> = [];
+                for await (const e of currentLayerData) {
+                    evaluations.push(await Promise.resolve((step as GroupStep<any>).by(e)).then(result => ({
+                        e,
+                        result
+                    })));
+                }
                 groups = _.groupBy(currentLayerData, e => evaluations.find(ev => ev.e === e).result);
             }
             // Lodash returns the name as the string "undefined"
             const groupNames = Object.getOwnPropertyNames(groups).filter(name => name !== "undefined");
             if (groupNames.length === 1 && (step as GroupStep<any>).flattenSingle) {
-                return layer(originalData, currentLayerData, steps.slice(1), renderer);
+                return layer(currentLayerData, steps.slice(1), renderer);
             } else {
                 return Promise.all(groupNames.map(async name => {
                     return {
                         name,
-                        children: await layer(originalData, await groups[name], steps.slice(1), renderer),
+                        children: await layer(await groups[name], steps.slice(1), renderer),
                     };
                 }));
             }
-        case "split":
-            const splitStep = step as SplitStep<any, any>;
-            return Promise.all(currentLayerData.map(async t => {
-                return {
-                    name: splitStep.namer(t),
-                    children: await layer(originalData,
-                        splitStep.splitter(t).filter(x => !!x),
-                        steps.slice(1), renderer),
-                };
-            }));
-        case "map":
-            const mappedThings = (step as MapStep<any, any>).mapping(currentLayerData, originalData).filter(x => !!x);
-            return layer(originalData, mappedThings, steps.slice(1), renderer);
+        // case "split":
+        //     const splitStep = step as SplitStep<any, any>;
+        //     return Promise.all(currentLayerData.map(async t => {
+        //         return {
+        //             name: splitStep.namer(t),
+        //             children: await layer(originalData,
+        //                 splitStep.splitter(t).filter(x => !!x),
+        //                 steps.slice(1), renderer),
+        //         };
+        //     }));
+        // case "map":
+        //     const mappedThings = (step as MapStep<any, any>).mapping(currentLayerData, originalData).filter(x => !!x);
+        //     return layer(originalData, mappedThings, steps.slice(1), renderer);
         default:
             throw new Error(`Unknown step type '${step.kind}'`);
     }
